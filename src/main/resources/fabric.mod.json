@@ -1,0 +1,35 @@
+{
+	"schemaVersion": 1,
+	"id": "mcpcommand",
+	"version": "${version}",
+	"name": "MCPCommand",
+	"description": "把当前 Minecraft 客户端接入 AI 助手：在本地开一个 MCP(HTTP) 服务，暴露 mc_command 等工具，以「本地玩家在聊天栏执行命令 + 捕获回显」的方式把结果回传给助手。",
+	"authors": [
+		"Laoqi2603"
+	],
+	"contact": {
+		"homepage": "https://github.com/Laoqi2603/mcpcommand",
+		"sources": "https://github.com/Laoqi2603/mcpcommand",
+		"issues": "https://github.com/Laoqi2603/mcpcommand/issues"
+	},
+	"license": "MIT",
+	"icon": "assets/mcpcommand/icon.png",
+	"environment": "client",
+	"entrypoints": {
+		"main": [
+			"laoqi.mcpcommand.MCPCommand"
+		],
+		"client": [
+			"laoqi.mcpcommand.MCPCommandClient"
+		]
+	},
+	"mixins": [
+		"mcpcommand.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=${loader_version}",
+		"minecraft": "~${minecraft_version}",
+		"java": ">=21",
+		"fabric-api": "*"
+	}
+}

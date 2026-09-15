@@ -1,0 +1,115 @@
+plugins {
+    id 'fabric-loom' version "${loom_version}"
+    id 'maven-publish'
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+    archivesName = project.archives_base_name
+}
+
+repositories {
+    // ⚠️ 官方 Fabric 源必须排在最前：fabric-loader / fabric-api / intermediary / yarn
+    //    只有它有（阿里云没有 Fabric 构件）。
+    //    原「Lss233 聚合镜像」的 TLS 证书已过期（curl: SEC_E_CERT_EXPIRED），
+    //    Gradle 遇到证书错误的仓库会直接失败而不是跳过，故不再列入。
+    maven { name = 'Fabric';          url = 'https://maven.fabricmc.net/' }
+    // 国内镜像（Maven 中央库加速）
+    maven { name = 'AliyunPublic';    url = 'https://maven.aliyun.com/repository/public/' }
+    maven { name = 'HanbingsProxy';   url = 'https://repository.hanbings.io/proxy/' }
+    mavenCentral()
+}
+
+def useYarn = (project.findProperty('use_yarn') ?: 'false').toBoolean()
+
+// ---------------------------------------------------------------------------
+// 映射装配（本工程构建的关键点，改动前请先读 gradle/intermediary-as-named-mappings.gradle）
+//   use_yarn=false（默认）：源码是 intermediary 命名（反编译产物），走「named = intermediary」
+//                           的三命名空间映射，源码原样编译；映射由脚本现场生成。
+//   use_yarn=true         ：yarn 命名（可读），但必须先迁移源码，见 docs/ARCHITECTURE.md 的「构建系统」。
+// ---------------------------------------------------------------------------
+def localMappingsJar = null
+if (!useYarn) {
+    apply from: 'gradle/intermediary-as-named-mappings.gradle'
+    localMappingsJar = project.ext.mcpcommandMappingsJar
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+
+    if (useYarn) {
+        mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    } else {
+        mappings files(localMappingsJar)
+    }
+
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+}
+
+// ---------------------------------------------------------------------------
+// 调试用可选开关（都不传时完全不生效，默认行为不变）：
+//   ./gradlew runClient -PquickPlay=<存档名>           → 直接进单人存档
+//   ./gradlew runClient -PquickPlayServer=<host:port>  → 直接连服务器（如 127.0.0.1:25565）
+//   ./gradlew runClient -Pport=25889                   → MCP 服务换端口（默认 25888），
+//                                                        便于与「生产客户端」并行调试
+// 不这么做时客户端停在主菜单，player == null，mc_command 只会回 "not connected to a server"。
+// 注意：必须走 loom.runs 的 programArgs 追加，不能用 gradlew 的 --args —— 后者会覆盖
+//      Loom 注入的 dev 启动参数（--username/--uuid/--assetIndex/--gameDir 等）。
+// ---------------------------------------------------------------------------
+def quickPlayWorld = project.findProperty('quickPlay')
+def quickPlayServer = project.findProperty('quickPlayServer')
+def debugPort = project.findProperty('port')
+def quickPlayArgs = []
+if (quickPlayWorld) {
+    quickPlayArgs.addAll(['--quickPlaySingleplayer', quickPlayWorld.toString()])
+}
+if (quickPlayServer) {
+    quickPlayArgs.addAll(['--quickPlayMultiplayer', quickPlayServer.toString()])
+}
+if (!quickPlayArgs.isEmpty() || debugPort) {
+    loom {
+        runs {
+            client {
+                if (!quickPlayArgs.isEmpty()) {
+                    programArgs quickPlayArgs
+                }
+                if (debugPort) {
+                    vmArg "-Dmcpcommand.port=${debugPort}"
+                }
+            }
+        }
+    }
+}
+
+processResources {
+    // 元数据里有中文，必须显式声明 UTF-8，否则 Windows 默认编码会乱码
+    filteringCharset = "UTF-8"
+    inputs.property "version", project.version
+    inputs.property "loader_version", project.loader_version
+    inputs.property "minecraft_version", project.minecraft_version
+    filesMatching("fabric.mod.json") {
+        expand "version": project.version,
+               "loader_version": project.loader_version,
+               "minecraft_version": project.minecraft_version
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.encoding = "UTF-8"
+    it.options.release = 21
+}
+
+java {
+    withSourcesJar()
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+jar {
+    from("LICENSE") {
+        rename { "${it}_${project.base.archivesName.get()}" }
+    }
+}

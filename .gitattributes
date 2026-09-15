@@ -1,0 +1,26 @@
+#
+# 行尾与二进制处理
+# https://help.github.com/articles/dealing-with-line-endings/
+#
+# 仓库里统一存 LF，检出也用 LF（下面 *.bat 单独覆盖回 CRLF）：
+# 这样 Windows 开发和 Linux CI 的工作区一致，不会出现"只有行尾变了"的假 diff。
+* text=auto eol=lf
+
+# Linux/macOS 启动脚本必须用 LF
+gradlew         text eol=lf
+
+# Windows 脚本必须用 CRLF
+*.bat           text eol=crlf
+*.cmd           text eol=crlf
+
+# 二进制：明确标出来，避免被当文本转换而损坏
+*.jar           binary
+*.png           binary
+*.pyc           binary
+
+# 让 GitHub 正确识别语言与文档
+*.java          text
+*.gradle        text
+*.py            text
+*.md            text
+*.yml           text

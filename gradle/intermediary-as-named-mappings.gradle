@@ -1,0 +1,136 @@
+// ============================================================================
+//  MCPCommand 构建补丁：intermediary → named 映射桥接
+// ----------------------------------------------------------------------------
+//  【为什么需要这个文件】
+//  本工程源码是「生产 jar 反编译」产物，类名/方法名是 intermediary（class_XXXX /
+//  method_XXXX），所以 build.gradle 默认拿 net.fabricmc:intermediary 当 mappings。
+//  但 Loom 的映射管线要求映射里必须存在名为 "named" 的命名空间，而 Fabric 的
+//  intermediary 映射只有 official + intermediary 两个命名空间，于是：
+//
+//      MappingConfiguration.storeMappings()          <- Loom 1.17.14
+//        └─ areMappingsV2(baseTinyMappings) == false  （intermediary 发布的是 tiny v1）
+//             └─ suggestFieldNames() → stitch CommandProposeFieldNames.run():85
+//                  └─ 在表头里找不到 "named"
+//                       └─ RuntimeException: Could not find 'named' mapping position!
+//
+//  【解决办法】
+//  把 net.fabricmc:intermediary:<mc>:v2（tiny v2：official + intermediary）
+//  转成三命名空间 official / intermediary / named，其中 **named 列复制 intermediary 列**。
+//    · 转换后是 tiny v2 → Loom 走 areMappingsV2 == true 分支，直接复制映射，
+//      完全不经过 stitch 的字段名推断（那条路只支持 v1，就是报错源头）；
+//    · named == intermediary → 源码里的 class_XXXX 原样编译，产物 jar 依旧是
+//      intermediary 命名（Fabric 生产环境的正常形态）。
+//  这不是取巧：Loom 内部对「用 intermediary 补全 named」有同样的语义
+//  （见 Loom 的 IntermediaryMappingLayer：MappingNsCompleter(NAMED <- INTERMEDIARY)）。
+//
+//  【生成物】
+//  <rootDir>/.gradle/mcpcommand-mappings/intermediary-as-named-<mc版本>.jar
+//    内含 mappings/mappings.tiny（tiny v2，三命名空间）+ MANIFEST 的 Minecraft-Version-Id
+//    .gradle/ 已在 .gitignore 中，不会进版本库。
+// ============================================================================
+
+import java.util.jar.Manifest
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
+
+def mcVersion = project.minecraft_version.toString()
+def outDir = new File(project.rootDir, '.gradle/mcpcommand-mappings')
+def outJar = new File(outDir, "intermediary-as-named-${mcVersion}.jar")
+def stampFile = new File(outDir, "intermediary-as-named-${mcVersion}.stamp")
+
+// ---------------------------------------------------------------------------
+// 1) 通过 Gradle 依赖解析拿 tiny v2 版 intermediary 映射
+//    （用依赖解析而不是硬编码 URL：自动走 build.gradle 里配置的镜像，
+//      首次下载后落在 Gradle 缓存，之后离线可用）
+// ---------------------------------------------------------------------------
+def cfg = configurations.create('mcpcommandIntermediaryV2Mappings')
+cfg.canBeConsumed = false
+cfg.canBeResolved = true
+cfg.transitive = false
+dependencies.add(cfg.name, "net.fabricmc:intermediary:${mcVersion}:v2")
+
+def sourceJar
+try {
+    sourceJar = cfg.singleFile
+} catch (Exception e) {
+    throw new GradleException(
+            "无法解析 net.fabricmc:intermediary:${mcVersion}:v2 —— MCPCommand 需要它来生成 " +
+            "official/intermediary/named 三命名空间映射（详见 gradle/intermediary-as-named-mappings.gradle）。" +
+            "请检查网络或仓库镜像配置。", e)
+}
+
+// 2) 是否需要重新生成（源 jar 未变则跳过，避免每次 configure 都重写几 MB 文件）
+def stamp = "v1|${sourceJar.length()}|${sourceJar.lastModified()}"
+boolean upToDate = outJar.isFile() && stampFile.isFile() && stampFile.text.trim() == stamp
+
+if (!upToDate) {
+    // -----------------------------------------------------------------------
+    // 3) 读 mappings/mappings.tiny 并补一列 named（内容 = intermediary 列）
+    //    tiny v2 是「按行 + tab 分列」的格式，补一个命名空间 = 每行把最后一列再写一遍；
+    //    注释行（<缩进>c<TAB>文字）没有列，必须原样保留。
+    // -----------------------------------------------------------------------
+    String sourceText
+    new ZipFile(sourceJar).withCloseable { zip ->
+        def entry = zip.getEntry('mappings/mappings.tiny')
+        if (entry == null) {
+            throw new GradleException("${sourceJar} 里没有 mappings/mappings.tiny，无法生成映射")
+        }
+        sourceText = zip.getInputStream(entry).getText('UTF-8')
+    }
+
+    def lines = sourceText.split('\n', -1)
+    if (!lines[0].startsWith('tiny\t2\t0\t')) {
+        throw new GradleException(
+                "预期 tiny v2 格式映射，实际表头为：${lines[0]}（请确认 dependency 用了 :v2 classifier）")
+    }
+
+    def out = new StringBuilder((int) (sourceText.length() * 1.25))
+    lines.eachWithIndex { String line, int i ->
+        if (i == 0) {
+            // 表头：tiny 2 0 official intermediary  ->  再补一个 named
+            out.append(line).append('\tnamed')
+        } else if (line.isEmpty()) {
+            // 文件末尾换行产生的空元素
+        } else {
+            def cols = line.split('\t', -1)
+            int depth = 0
+            while (depth < cols.length && cols[depth].isEmpty()) depth++
+            boolean isComment = depth < cols.length && cols[depth] == 'c' && cols.length == depth + 2
+            if (isComment) {
+                out.append(line)                    // 注释行：不加列
+            } else {
+                out.append(line).append('\t').append(cols[cols.length - 1])
+            }
+        }
+        if (i != lines.length - 1) out.append('\n')
+    }
+
+    String outText = out.toString()
+    String header = outText.substring(0, outText.indexOf('\n'))
+    if (!(header.contains('\tofficial') && header.contains('\tintermediary') && header.endsWith('\tnamed'))) {
+        throw new GradleException("生成的映射表头不正确：${header}")
+    }
+
+    outDir.mkdirs()
+    def manifest = new Manifest()
+    manifest.mainAttributes.putValue('Manifest-Version', '1.0')
+    manifest.mainAttributes.putValue('Minecraft-Version-Id', mcVersion)
+    new ZipOutputStream(new FileOutputStream(outJar)).withCloseable { zos ->
+        // MANIFEST 先写入（Loom 的 TinyJarInfo 会读 Minecraft-Version-Id，缺失也能跑，写了更保险）
+        zos.putNextEntry(new ZipEntry('META-INF/MANIFEST.MF'))
+        def mf = new ByteArrayOutputStream()
+        manifest.write(mf)
+        zos.write(mf.toByteArray())
+        zos.closeEntry()
+
+        zos.putNextEntry(new ZipEntry('mappings/mappings.tiny'))
+        zos.write(outText.getBytes('UTF-8'))
+        zos.closeEntry()
+    }
+    stampFile.text = stamp
+    logger.info("[mcpcommand] 已生成三命名空间映射（named = intermediary）: {}", outJar)
+}
+
+// 供 build.gradle 里的 mappings 使用
+ext.mcpcommandMappingsJar = outJar

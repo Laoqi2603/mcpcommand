@@ -1,0 +1,28 @@
+name: 功能建议
+description: 提一个新工具、新参数或行为改进
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你想解决什么问题
+      description: 描述场景比描述方案更有用
+      placeholder: 我需要按时间段统计某个玩家的容器存取，但现在只能一页页翻
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 你设想的做法
+      placeholder: 给 mc_command 加一个聚合参数…／新增一个 mc_xxx 工具…
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 确认
+      options:
+        - label: 我已经确认现有工具确实做不到这件事
+          required: true

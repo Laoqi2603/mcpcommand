@@ -1,0 +1,43 @@
+# 发布：推一个 v* tag 就自动构建并把 jar 挂到 GitHub Release。
+#
+#   git tag v1.0.2 && git push origin v1.0.2
+#
+# 注意：tag 名字里的版本号要与 gradle.properties 的 mod_version 一致，
+# 否则 Release 里挂的 jar 文件名会和 tag 对不上。
+
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write        # 创建 Release 需要写权限
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v6
+      - name: validate gradle wrapper
+        uses: gradle/actions/wrapper-validation@v6
+      - name: setup jdk
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'microsoft'
+      - name: setup gradle
+        uses: gradle/actions/setup-gradle@v5
+      - name: make gradle wrapper executable
+        run: chmod +x ./gradlew
+      - name: build
+        run: ./gradlew build
+      - name: publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/libs/*.jar
+          generate_release_notes: true
+          draft: false

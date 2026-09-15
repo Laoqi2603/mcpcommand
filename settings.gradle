@@ -1,0 +1,17 @@
+// MCPCommand —— Gradle 设置文件
+// 说明：这里配置的是「插件从哪下载」。
+//      注意顺序：官方 Fabric 源放最前（fabric-loom 只有它有），国内镜像作兜底。
+//      原「Lss233 聚合镜像」证书已过期（curl: SEC_E_CERT_EXPIRED），
+//      Gradle 遇到证书错误会直接失败，故已移除。
+pluginManagement {
+    repositories {
+        // —— 官方 Fabric 源 ——
+        maven { name = 'Fabric';          url = 'https://maven.fabricmc.net/' }
+        // —— 国内镜像（通用 Maven 构件加速）——
+        maven { name = 'AliyunPublic';    url = 'https://maven.aliyun.com/repository/public/' }
+        maven { name = 'HanbingsProxy';   url = 'https://repository.hanbings.io/proxy/' }
+        gradlePluginPortal()
+    }
+}
+
+rootProject.name = 'mcpcommand'

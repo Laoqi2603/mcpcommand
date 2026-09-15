@@ -1,0 +1,96 @@
+name: Bug 报告
+description: 报告一个可复现的问题
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！请尽量把环境信息填全 —— 模组行为与 Minecraft / Fabric Loader / 服务端插件都强相关。
+        **提交前请先搜一下已有 issue。**
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 现象
+      description: 发生了什么？期望是什么？
+      placeholder: 调用 mc_command 执行 "/co lookup …" 时，返回 status=incomplete 且 output 只有"正在搜索，请稍等…"
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤
+      description: 尽量包含你实际发出的 MCP 请求（命令与参数）
+      placeholder: |
+        1. 进入服务器
+        2. tools/call mc_command {"commands":["/co lookup u:someone t:30d"],"quiet_ms":250}
+        3. 得到 status=incomplete
+    validations:
+      required: true
+
+  - type: input
+    id: mc-version
+    attributes:
+      label: Minecraft 版本
+      placeholder: 1.21.11
+    validations:
+      required: true
+
+  - type: input
+    id: mod-version
+    attributes:
+      label: MCPCommand 版本
+      description: 也可用 `initialize` 返回的 serverInfo.version，或 jar 文件名
+      placeholder: 1.0.0
+    validations:
+      required: true
+
+  - type: input
+    id: loader
+    attributes:
+      label: Fabric Loader / Fabric API 版本
+      placeholder: Loader 0.18.4 / Fabric API 0.141.6+1.21.11
+    validations:
+      required: true
+
+  - type: dropdown
+    id: where
+    attributes:
+      label: 在哪里出现
+      options:
+        - 单人 / LAN 世界
+        - 专用服务器（原版）
+        - 专用服务器（Paper/Spigot 等）
+        - 不确定 / 都有
+    validations:
+      required: true
+
+  - type: textarea
+    id: health
+    attributes:
+      label: /health 与 /list 的结果
+      description: 用于确认服务是否正常、以及是否真的进了世界
+      render: json
+      placeholder: '{"status":"ok","server_available":false}'
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志
+      description: 客户端 `logs/latest.log` 里与 `mcpcommand` 相关的行（**注意先删掉账号名、IP 等隐私信息**）
+      render: text
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 确认
+      options:
+        - label: 我已经确认客户端**进入了世界/服务器**（标题界面下无法执行指令，这是预期行为）
+          required: true
+        - label: 我已经确认 mods 目录里**只有一份** mcpcommand jar
+          required: true
